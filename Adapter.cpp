@@ -41,6 +41,7 @@ void Adapter::IncreaseCounter(char* remote_address, int protocol, int ErrorCode)
 	{
 		std::lock_guard<std::mutex> lock(StatMapMutex);
 
+
 		if (RunningMap == STATISTICS_MAP_1)
 		{
 			(protocol == TCP) ? StatMap1[std::string(remote_address)].TCPCount++ : StatMap1[std::string(remote_address)].UDPCount++;

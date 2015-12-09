@@ -24,14 +24,15 @@ private:
 
 	std::vector<unsigned int> LocalAddresses;
 
-public:
 
 	void SetAdapterName( char* pc_AdapterName);
 	void IncreaseCounter(char* remote_address, int protocol, int ErrorCode);
-	int StartSniffingStatistics();
-	StatisticsMap& GetAdapterStatistics();
-	void PrintStatistics (StatisticsMap& StatMap_JustTaken);
 	void CallSniffer();
 	void AddLocalAddress(unsigned int LocalAddress);
 	unsigned int DetectRemoteAddress(unsigned int daddr, unsigned int saddr);
+
+public:
+	int StartSniffingStatistics();
+	StatisticsMap& GetAdapterStatistics();
+	void PrintStatistics(StatisticsMap& StatMap_JustTaken);
 };

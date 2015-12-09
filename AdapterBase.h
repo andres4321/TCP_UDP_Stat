@@ -17,12 +17,13 @@ class AdapterBase
 private:
 	void *g_alldevs;
 
-public:
 	virtual void IncreaseCounter(char* remote_address, int protocol, int ErrorCode) { return; };
 	virtual void AddLocalAddress( unsigned int LocalAddress ) { return; };
 	virtual void SetAdapterName(char* pc_AdapterName) { return; };
 	virtual unsigned int DetectRemoteAddress(unsigned int daddr, unsigned int saddr) { return daddr; };
+protected:
+	int AdapterStatistics(char* AdapterName);
+public:
 	int choose_ether_adapter_via_console();
 	void clean_up_pcap1();
-	int AdapterStatistics(char* AdapterName);
 };
