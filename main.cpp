@@ -5,23 +5,20 @@
 #include <iomanip>
 #include <ctime>
 #include <csignal>
-#include "pcap1.h"
+#include <chrono>
+#include <mutex>
+#include <vector>
 
+#include "AdapterBase.h"
 #include "Adapter.h"
 
-using namespace std::literals;
-
-#define STATISTICS_MAP_1 1
-#define STATISTICS_MAP_2 2
-#define TCP 1
-#define UDP 2
-
+Adapter *p_MyAdapter;
 
 void sig_handler(int signal)
 {
 	if (signal == SIGINT)
 	{
-		clean_up_pcap1();
+//		p_MyAdapter->clean_up_pcap1();
 		exit(0);
 	}
 }
@@ -32,24 +29,19 @@ int main()
 	Adapter MyAdapter;
 	int res;
 
+	p_MyAdapter = &MyAdapter;
 	std::signal(SIGINT, sig_handler );
 	std::signal(SIGABRT, sig_handler);
 	std::signal(SIGTERM, sig_handler);
 
-	if (get_adapter_name(&pc_AdapterName) == 0)
+	if ( MyAdapter.choose_ether_adapter_via_console() != 0)
 	{
-		MyAdapter.AdapterName = pc_AdapterName;
-	}
-	if ( )
-	{
-		std::cout << "Error getting adapter name for statistics.\n";
-		clean_up_pcap1();
+		std::cout << "Error getting adapter properties for statistics.\n";
+		MyAdapter.clean_up_pcap1();
 		exit(1);
 	}
 
-	
-//	clean_up_pcap1();
-
+	MyAdapter.clean_up_pcap1();
 
 	if (MyAdapter.StartSniffingStatistics() != 0)
 	{
@@ -57,13 +49,11 @@ int main()
 		exit(2);
 	}
 
-	MyAdapter.StatisticsOutStream = &(std::cout);
 
 	for (;;)
 	{
-		MyAdapter.LastStatisticsTakenTime = std::time(nullptr);
+		std::this_thread::sleep_for(std::chrono::seconds(5));
 		MyAdapter.PrintStatistics(MyAdapter.GetAdapterStatistics());
-		std::this_thread::sleep_for(5s);
 	}
 
 	return 0;

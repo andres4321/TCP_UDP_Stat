@@ -5,106 +5,115 @@
 #include <iomanip>
 #include <ctime>
 #include <csignal>
-#include "pcap1.h"
+#include <mutex>
+#include <vector>
+#include <iterator>
+#include <algorithm>
 
+#include "AdapterBase.h"
 #include "Adapter.h"
 
-
-class Sniffer
+void Adapter::SetAdapterName(char* pc_AdapterName)
 {
-public:
+	AdapterName = pc_AdapterName;
+}
 
-	static void CallSniffer(char* AdapterName, char* FilterString, unsigned int* StatisticsCounter, unsigned int ui_netmask, int* ErrCode)
+void Adapter::AddLocalAddress(unsigned int LocalAddress)
+{
+	LocalAddresses.push_back(LocalAddress);
+}
+
+unsigned int Adapter::DetectRemoteAddress(unsigned int daddr, unsigned int saddr)
+{
+	auto result = std::find(std::begin(LocalAddresses), std::end(LocalAddresses), daddr );
+
+	if (result != std::end(LocalAddresses) )
+		return saddr;
+	else return daddr;
+}
+
+void Adapter::CallSniffer()
 	{
-		AdapterStatistics(AdapterName, FilterString, StatisticsCounter, ui_netmask, ErrCode);
+		StatisticsThreadExitValue = AdapterStatistics( (char *) AdapterName.c_str() );
 	}
 
-};
-
-class Adapter {
-
-private:
-
-
-	StatisticsMap StatMap1, StatMap2;
-
-	std::thread StatisticsThread;
-
-	int RunningMap;
-
-	Sniffer MySniffer;
-
-	std::time_t LastStatisticsTakenTime;
-
-public:
-	std::string AdapterName;
-	std::ostream *StatisticsOutStream;
-
-	void IncreaseCounter(char* remote_address, int protocol, int ErrorCode)
+void Adapter::IncreaseCounter(char* remote_address, int protocol, int ErrorCode)
 	{
+		std::lock_guard<std::mutex> lock(StatMapMutex);
+
 		if (RunningMap == STATISTICS_MAP_1)
 		{
 			(protocol == TCP) ? StatMap1[std::string(remote_address)].TCPCount++ : StatMap1[std::string(remote_address)].UDPCount++;
 		}
 		else
 		{
-			(protocol == TCP) ? StatMap2[std::string(remote_address)].TCPCount++ : StatMap1[std::string(remote_address)].UDPCount++;
+			(protocol == TCP) ? StatMap2[std::string(remote_address)].TCPCount++ : StatMap2[std::string(remote_address)].UDPCount++;
 		}
 
 	}
 
-	int StartSniffingStatistics()
+int Adapter::StartSniffingStatistics()
 	{
 
-		StatisticsThread = std::thread(&Sniffer::CallSniffer, &MySniffer, (char*)AdapterName.c_str(), pair.second.FilterString, &(pair.second.TCPCount),
-			pair.second.ui_netmask, &(pair.second.TCP_ErrCode));
+		RunningMap = STATISTICS_MAP_1;
+
+		StatisticsThread = std::thread( &Adapter::CallSniffer, this );
 
 		return 0;
 	}
 
-	StatisticsMap& GetAdapterStatistics()
+StatisticsMap& Adapter::GetAdapterStatistics()
 	{
-		return StatMap1;
+		std::lock_guard<std::mutex> lock(StatMapMutex);
+
+		LastStatisticsTakenTime = std::time(nullptr);
+
+		if (RunningMap == STATISTICS_MAP_1)
+		{
+			RunningMap = STATISTICS_MAP_2; return StatMap1;
+		}
+		else
+		{
+			RunningMap = STATISTICS_MAP_1; return StatMap2;
+		}
 	}
 
-	void PrintStatistics(StatisticsMap& StatMap)
+struct TCP_Compare
+{
+	bool operator()(const unsigned int ui1, const unsigned int ui2) const
 	{
+		return !(ui1 < ui2);
+	}
+};
 
-		std::tm tm = *std::localtime(&t);
+
+void Adapter::PrintStatistics(StatisticsMap& StatMap_JustTaken)
+	{
+		if (!StatisticsThread.joinable())
+		{
+			std::cout << "Sniffing statistics thread has exit with code " << StatisticsThreadExitValue << std::endl;
+			clean_up_pcap1();
+			exit(StatisticsThreadExitValue);
+		}
+
+		std::tm tm = *std::localtime(&LastStatisticsTakenTime);
 
 		std::cout << "\n\n\nTime: " << std::put_time(&tm, "%F %T") << "\n";
 		std::cout << "IP address                Number of TCP packets     Number of UDP packets\n";
 		std::cout << "-------------------------------------------------------------------------\n";
 
 
-		for (auto &pair : MyAdapter.Addresses)
-		{
-			if (PreviousStatistics[pair.first].TCPCount <= CurrentStatistics[pair.first].TCPCount)
-			{
-				TCP_Total += ThisSliceStatistics[pair.first].TCPCount = CurrentStatistics[pair.first].TCPCount - PreviousStatistics[pair.first].TCPCount;
-			}
-			else
-			{
-				TCP_Total += ThisSliceStatistics[pair.first].TCPCount = CurrentStatistics[pair.first].TCPCount + 1 + ~PreviousStatistics[pair.first].TCPCount;
-			}
-			if (PreviousStatistics[pair.first].UDPCount <= CurrentStatistics[pair.first].UDPCount)
-			{
-				UDP_Total += ThisSliceStatistics[pair.first].UDPCount = CurrentStatistics[pair.first].UDPCount - PreviousStatistics[pair.first].UDPCount;
-			}
-			else
-			{
-				UDP_Total += ThisSliceStatistics[pair.first].UDPCount = CurrentStatistics[pair.first].UDPCount + 1 + ~PreviousStatistics[pair.first].UDPCount;
-			}
-		}
+		unsigned int TCP_Total = 0, UDP_Total = 0;
 
 		struct s { std::string Address; unsigned int UDP_Count; } s_temp;
-		std::multimap < unsigned int, s> Statistics_TCP_Sorted;
+		std::multimap < unsigned int, s, TCP_Compare > Statistics_TCP_Sorted;
 
-		for (auto &pair : ThisSliceStatistics)
+		for (auto &pair : StatMap_JustTaken)
 		{
 			s_temp.Address = pair.first;
-			s_temp.UDP_Count = pair.second.UDPCount;
+			UDP_Total += s_temp.UDP_Count = pair.second.UDPCount;
 			Statistics_TCP_Sorted.emplace(pair.second.TCPCount, s_temp);
+			TCP_Total += pair.second.TCPCount;
 		}
 		for (auto &pair : Statistics_TCP_Sorted)
 		{
@@ -113,6 +122,6 @@ public:
 
 		std::cout << "-------------------------------------------------------------------------\n";
 		printf("%-21s     %-26d%d\n", (char *) "Total", TCP_Total, UDP_Total);
-	}
 
-}; //end class
+		StatMap_JustTaken.clear();
+	}

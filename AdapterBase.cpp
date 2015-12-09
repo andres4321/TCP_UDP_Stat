@@ -125,7 +125,7 @@ int AdapterBase::AdapterStatistics( char* AdapterName )
 	/* Open the device */
 	//printf("Opening %s\n", StatisticsFilter);
 	if ((adhandle = pcap_open(AdapterName, //d->name,          // name of the device
-		65536,            // portion of the packet to capture. 
+		34, //65536,            // portion of the packet to capture. 
 						  // 65536 guarantees that the whole packet will be captured on all the link layers
 		PCAP_OPENFLAG_MAX_RESPONSIVENESS,    // NO promiscuous mode
 		0,//1000,             // read timeout
