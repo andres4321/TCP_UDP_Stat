@@ -6,19 +6,22 @@ typedef std::map<std::string, TrafficCounters> StatisticsMap;
 
 class Adapter: public AdapterBase
 {
+#ifdef GOOGLE_TEST
+public:
+	virtual void Test_Adapter_Sleep(int duration) { std::this_thread::sleep_for(std::chrono::milliseconds(duration)); };
+#else
 private:
+#endif
 
 
 	StatisticsMap StatMap1, StatMap2;
+	StatisticsMap* RunningStatMap = &StatMap1;
 
-	std::thread StatisticsThread;
-
-	int RunningMap, StatisticsThreadExitValue;
+	std::future<int> StatisticsThreadExitValue;
 
 	std::time_t LastStatisticsTakenTime;
 
 	std::string AdapterName;
-	std::ostream *StatisticsOutStream;
 
 	std::mutex StatMapMutex;
 
@@ -27,12 +30,11 @@ private:
 
 	void SetAdapterName( char* pc_AdapterName);
 	void IncreaseCounter(char* remote_address, int protocol, int ErrorCode);
-	void CallSniffer();
 	void AddLocalAddress(unsigned int LocalAddress);
 	unsigned int DetectRemoteAddress(unsigned int daddr, unsigned int saddr);
-
 public:
-	int StartSniffingStatistics();
+	void StartSniffingStatistics();
 	StatisticsMap& GetAdapterStatistics();
-	void PrintStatistics(StatisticsMap& StatMap_JustTaken);
+	void PrintStatistics(std::ostream* StatisticsSink, StatisticsMap& StatMap_JustTaken);
+	~Adapter();
 };

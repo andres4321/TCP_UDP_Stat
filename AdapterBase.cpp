@@ -25,14 +25,12 @@ typedef struct ip_header {
 	u_int   op_pad;         // Option + Padding
 }ip_header;
 
-//pcap_if_t *g_alldevs;
 
 int AdapterBase::choose_ether_adapter_via_console()
 {
 	pcap_if_t *d;
 	pcap_addr_t *a;
 	pcap_if_t *alldevs;
-	char *iptos(u_long in);
 
 	int i = 0;
 	char errbuf[PCAP_ERRBUF_SIZE];
@@ -70,6 +68,7 @@ int AdapterBase::choose_ether_adapter_via_console()
 	if (i == 0)
 	{
 		printf("\nNo interfaces found! Make sure WinPcap is installed.\n");
+		clean_up_pcap1();
 		return 2;
 	}
 
@@ -82,7 +81,6 @@ int AdapterBase::choose_ether_adapter_via_console()
 	/* Jump to the selected adapter */
 	for (d = alldevs, i = 0; i< iUserChoice; d = d->next, i++);
 
-	//*cAdapterName = d->name;
 	SetAdapterName(d->name);
 
 	for (a = d->addresses; a; a = a->next)
@@ -91,6 +89,7 @@ int AdapterBase::choose_ether_adapter_via_console()
 		if (a->addr) AddLocalAddress( (unsigned int) (((struct sockaddr_in *)a->addr)->sin_addr.s_addr) );
 	}
 
+	clean_up_pcap1();
 
 	return 0;
 }
@@ -98,34 +97,28 @@ int AdapterBase::choose_ether_adapter_via_console()
 void AdapterBase::clean_up_pcap1()
 {
 	pcap_freealldevs( (pcap_if_t*)g_alldevs);
+	g_alldevs = 0;
 }
 
-
+#ifndef GOOGLE_TEST
 int AdapterBase::AdapterStatistics( char* AdapterName )
 {
 	int i = 0;
 	char errbuf[PCAP_ERRBUF_SIZE];
-	char *iptos(u_long in);
 
-	struct tm ltime;
-	char timestr[16];
 	struct pcap_pkthdr *header;
 	const u_char *pkt_data;
-	time_t local_tv_sec;
 
 	pcap_t *adhandle;
 	ip_header *ih;
 
-	struct bpf_program fcode;
-
-	int iUserChoice, res;
+	int res;
 
 	unsigned int RemoteAddress;
 
 	/* Open the device */
-	//printf("Opening %s\n", StatisticsFilter);
-	if ((adhandle = pcap_open(AdapterName, //d->name,          // name of the device
-		34, //65536,            // portion of the packet to capture. 
+	if ((adhandle = pcap_open(AdapterName, // name of the device
+		34, // portion of the packet to capture, 34 enogh to capture addresses
 						  // 65536 guarantees that the whole packet will be captured on all the link layers
 		PCAP_OPENFLAG_MAX_RESPONSIVENESS,    // NO promiscuous mode
 		0,//1000,             // read timeout
@@ -133,51 +126,25 @@ int AdapterBase::AdapterStatistics( char* AdapterName )
 		errbuf            // error buffer
 		)) == NULL)
 	{
-		//*ErrCode = 1;
-		pcap_freealldevs( (pcap_if_t*) g_alldevs);
 		return -1;
 	}
 
 	/* Check the link layer. We support only Ethernet AS DEFINED. */
 	if (pcap_datalink(adhandle) != DLT_EN10MB)
 	{
-		//fprintf(stderr, "\nThis program works only on Ethernet networks.\n");
-		/* Free the device list */
-		pcap_freealldevs( (pcap_if_t*)g_alldevs);
-		return -2;
+		return -3;
 	}
-	//printf("\nlistening on %s...\n", d->description);
-
-	/* At this point, we don't need any more the device list. Free it */
-	//	pcap_freealldevs(alldevs);
-
-	//printf("Going to compile %s\n", StatisticsFilter);
 
 	/* Retrieve the packets */
 	while (1) {
 
 		res = pcap_next_ex(adhandle, &header, &pkt_data);
-		//		printf("res = %d\n", res);
-		//		if (res == 0)
-		/* Timeout elapsed */
-		//			continue;
-
-		/* convert the timestamp to readable format */
-		//local_tv_sec = header->ts.tv_sec;
-		//localtime_s(&ltime, &local_tv_sec);
-		//strftime(timestr, sizeof timestr, "%H:%M:%S", &ltime);
-
-		//printf("%s,%.6d len:%d\n", timestr, header->ts.tv_usec, header->len);
 
 		if (res == -1) {
-			//		printf("Error reading the packets: %s\n", pcap_geterr(adhandle));
-			//		return -1;
-			//*ErrCode = 1;
 			IncreaseCounter("Errors:", TCP, ERRORS);
 		}
 		else if (res == 1)
 		{
-			//(*StatisticsCounter)++;
 			/* retireve the position of the ip header */
 			ih = (ip_header *)(pkt_data + 14); //length of ethernet header
 
@@ -191,18 +158,83 @@ int AdapterBase::AdapterStatistics( char* AdapterName )
 	}
 
 }
-
-
-/* From tcptraceroute, convert a numeric IP address to a string */
-#define IPTOSBUFFERS    12
-char *iptos(u_long in)
+#else
+// VERSION FOR TEST!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+int AdapterBase::AdapterStatistics(char* AdapterName)
 {
-	static char output[IPTOSBUFFERS][3 * 4 + 3 + 1];
-	static short which;
+	int i = 0;
+	char errbuf[PCAP_ERRBUF_SIZE];
+
+	struct pcap_pkthdr *header;
+	const u_char *pkt_data;
+
+	pcap_t *adhandle;
+	ip_header *ih;
+
+	int res;
+
+	unsigned int RemoteAddress;
+
+	char source[PCAP_BUF_SIZE];
+
+	if (pcap_createsrcstr(source,         // variable that will keep the source string
+		PCAP_SRC_FILE,  // we want to open a file
+		NULL,           // remote host
+		NULL,           // port on the remote host
+		"TestFile.pcap",        // name of the file we want to open
+		errbuf          // error buffer
+		) != 0)
+	{
+		return -1;
+	}
+
+	/* Open the device */
+
+	if ((adhandle = pcap_open(source, // name of the device
+		34, // portion of the packet to capture, 34 enough to capture addresses
+		PCAP_OPENFLAG_MAX_RESPONSIVENESS,    // NO promiscuous mode
+		0,//1000,             // read timeout
+		NULL,             // authentication on the remote machine
+		errbuf            // error buffer
+		)) == NULL)
+	{
+		return -1;
+	}
+
+	/* Retrieve the packets */
+	for (i = 0;; i++) {
+
+		if (i == 0) Test_Adapter_Sleep(500);
+		if ( i && i % 10000 == 0 ) Test_Adapter_Sleep(5000);
+
+		res = pcap_next_ex(adhandle, &header, &pkt_data);
+
+		if (res == -1) {
+			IncreaseCounter("Errors:", TCP, ERRORS);
+		}
+		else if (res == 1)
+		{
+			ih = (ip_header *)(pkt_data + 14); //length of ethernet header
+
+			if (ih->proto != TCP && ih->proto != UDP) continue;
+
+			RemoteAddress = DetectRemoteAddress(ih->daddr, ih->saddr);
+
+			IncreaseCounter(iptos(RemoteAddress), ih->proto, NO_ERRORS);
+		}
+		else if (res == -2)
+		{
+			return -2; // EOF reached
+		}
+
+	}
+}
+#endif
+char* AdapterBase::iptos(unsigned long int in)
+{
 	u_char *p;
 
 	p = (u_char *)&in;
-	which = (which + 1 == IPTOSBUFFERS ? 0 : which + 1);
-	_snprintf_s(output[which], sizeof(output[which]), sizeof(output[which]), "%d.%d.%d.%d", p[0], p[1], p[2], p[3]);
-	return output[which];
+	_snprintf_s(ch_iptos_buffer, 20, 19, "%d.%d.%d.%d", p[0], p[1], p[2], p[3]);
+	return ch_iptos_buffer;
 }

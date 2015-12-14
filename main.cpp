@@ -8,53 +8,38 @@
 #include <chrono>
 #include <mutex>
 #include <vector>
+#include <future>
 
 #include "AdapterBase.h"
 #include "Adapter.h"
 
-Adapter *p_MyAdapter;
-
-void sig_handler(int signal)
-{
-	if (signal == SIGINT)
-	{
-//		p_MyAdapter->clean_up_pcap1();
-		exit(0);
-	}
-}
 
 int main()
 {
-	char* pc_AdapterName;
 	Adapter MyAdapter;
-	int res;
 
-	p_MyAdapter = &MyAdapter;
-	std::signal(SIGINT, sig_handler );
-	std::signal(SIGABRT, sig_handler);
-	std::signal(SIGTERM, sig_handler);
 
 	if ( MyAdapter.choose_ether_adapter_via_console() != 0)
 	{
 		std::cout << "Error getting adapter properties for statistics.\n";
-		MyAdapter.clean_up_pcap1();
 		exit(1);
 	}
 
-	MyAdapter.clean_up_pcap1();
 
-	if (MyAdapter.StartSniffingStatistics() != 0)
+	try
 	{
-		std::cout << "Failed starting sniffing statistics.\n";
-		exit(2);
+		MyAdapter.StartSniffingStatistics();
+
+		for (;;)
+		{
+			std::this_thread::sleep_for(std::chrono::seconds(5));
+			MyAdapter.PrintStatistics(&std::cout, MyAdapter.GetAdapterStatistics());
+		}
+	}
+	catch (std::exception e)
+	{
+		std::cout << std::endl << e.what() << std::endl;
 	}
 
-
-	for (;;)
-	{
-		std::this_thread::sleep_for(std::chrono::seconds(5));
-		MyAdapter.PrintStatistics(MyAdapter.GetAdapterStatistics());
-	}
-
-	return 0;
+	return 2;
 }

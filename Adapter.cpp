@@ -9,9 +9,25 @@
 #include <vector>
 #include <iterator>
 #include <algorithm>
+#include <future>
 
 #include "AdapterBase.h"
 #include "Adapter.h"
+
+#define TestSniffingThreadAlive \
+	auto status = StatisticsThreadExitValue.wait_for(std::chrono::milliseconds(0)); \
+	if (status == std::future_status::ready) \
+	{ \
+		std::string _ErrorMessage = std::string("Sniffing statistics thread has exited with code ") + std::to_string(StatisticsThreadExitValue.get()); \
+		throw std::exception(_ErrorMessage.c_str()); \
+	} 
+
+
+
+Adapter::~Adapter()
+{
+	if ( g_alldevs ) clean_up_pcap1();
+}
 
 void Adapter::SetAdapterName(char* pc_AdapterName)
 {
@@ -32,76 +48,59 @@ unsigned int Adapter::DetectRemoteAddress(unsigned int daddr, unsigned int saddr
 	else return daddr;
 }
 
-void Adapter::CallSniffer()
-	{
-		StatisticsThreadExitValue = AdapterStatistics( (char *) AdapterName.c_str() );
-	}
-
 void Adapter::IncreaseCounter(char* remote_address, int protocol, int ErrorCode)
 	{
 		std::lock_guard<std::mutex> lock(StatMapMutex);
 
-
-		if (RunningMap == STATISTICS_MAP_1)
-		{
-			(protocol == TCP) ? StatMap1[std::string(remote_address)].TCPCount++ : StatMap1[std::string(remote_address)].UDPCount++;
-		}
-		else
-		{
-			(protocol == TCP) ? StatMap2[std::string(remote_address)].TCPCount++ : StatMap2[std::string(remote_address)].UDPCount++;
-		}
+		(protocol == TCP) ? (*RunningStatMap)[std::string(remote_address)].TCPCount++ : (*RunningStatMap)[std::string(remote_address)].UDPCount++;
 
 	}
 
-int Adapter::StartSniffingStatistics()
+void Adapter::StartSniffingStatistics()
 	{
 
-		RunningMap = STATISTICS_MAP_1;
+		RunningStatMap = &StatMap1;
 
-		StatisticsThread = std::thread( &Adapter::CallSniffer, this );
+		StatisticsThreadExitValue = std::async(std::launch::async, [this]{ return this->AdapterStatistics((char *)AdapterName.c_str()); });
 
-		return 0;
+		TestSniffingThreadAlive;
 	}
 
 StatisticsMap& Adapter::GetAdapterStatistics()
 	{
+		TestSniffingThreadAlive;
+
 		std::lock_guard<std::mutex> lock(StatMapMutex);
 
 		LastStatisticsTakenTime = std::time(nullptr);
 
-		if (RunningMap == STATISTICS_MAP_1)
+		if ( &StatMap1 == RunningStatMap )
 		{
-			RunningMap = STATISTICS_MAP_2; return StatMap1;
+			StatMap2.clear();  RunningStatMap = &StatMap2; return StatMap1;
 		}
 		else
 		{
-			RunningMap = STATISTICS_MAP_1; return StatMap2;
+			StatMap1.clear(); RunningStatMap = &StatMap1; return StatMap2;
 		}
-	}
+}
 
 struct TCP_Compare
 {
 	bool operator()(const unsigned int ui1, const unsigned int ui2) const
 	{
-		return !(ui1 < ui2);
+		return !(ui1 <= ui2);
 	}
 };
 
 
-void Adapter::PrintStatistics(StatisticsMap& StatMap_JustTaken)
+void Adapter::PrintStatistics(std::ostream* StatisticsSink, StatisticsMap& StatMap_JustTaken)
 	{
-		if (!StatisticsThread.joinable())
-		{
-			std::cout << "Sniffing statistics thread has exit with code " << StatisticsThreadExitValue << std::endl;
-			clean_up_pcap1();
-			exit(StatisticsThreadExitValue);
-		}
 
 		std::tm tm = *std::localtime(&LastStatisticsTakenTime);
 
-		std::cout << "\n\n\nTime: " << std::put_time(&tm, "%F %T") << "\n";
-		std::cout << "IP address                Number of TCP packets     Number of UDP packets\n";
-		std::cout << "-------------------------------------------------------------------------\n";
+		(*StatisticsSink) << "\n\n\nTime: " << std::put_time(&tm, "%F %T") << "\n";
+		(*StatisticsSink) << "IP address                Number of TCP packets     Number of UDP packets\n";
+		(*StatisticsSink) << "-------------------------------------------------------------------------\n";
 
 
 		unsigned int TCP_Total = 0, UDP_Total = 0;
@@ -118,11 +117,10 @@ void Adapter::PrintStatistics(StatisticsMap& StatMap_JustTaken)
 		}
 		for (auto &pair : Statistics_TCP_Sorted)
 		{
-			printf("%-21s     %-26d%d\n", (char*)pair.second.Address.c_str(), pair.first, pair.second.UDP_Count);
+			(*StatisticsSink) << std::setfill(' ') << std::setw(26) << std::left << pair.second.Address.c_str() << std::setw(26) << pair.first << std::setw(0) << pair.second.UDP_Count << std::endl;
 		}
 
-		std::cout << "-------------------------------------------------------------------------\n";
-		printf("%-21s     %-26d%d\n", (char *) "Total", TCP_Total, UDP_Total);
+		(*StatisticsSink) << "-------------------------------------------------------------------------\n";
+		(*StatisticsSink) << std::setfill(' ') << std::setw(26) << std::left << "Total" << std::setw(26) << TCP_Total << std::setw(0) << UDP_Total << std::endl;
 
-		StatMap_JustTaken.clear();
 	}
